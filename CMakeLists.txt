@@ -1,9 +1,15 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 project(AKFSFSimulation)
 
 set(CMAKE_CXX_STANDARD 11)
 
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package (Eigen3 REQUIRED NO_MODULE)
+find_package (OpenCV REQUIRED)
+find_package (SDL2 REQUIRED)
+
+# Find SDL2_ttf
+find_path(SDL2_TTF_INCLUDE_DIR SDL_ttf.h PATH_SUFFIXES SDL2)
+find_library(SDL2_TTF_LIBRARY SDL2_ttf)
 
 set(SRC_CPP
     src/main.cpp
@@ -19,10 +25,16 @@ add_executable(${PROJECT_NAME}
         ${SRC_CPP}
         )
 
+target_include_directories(${PROJECT_NAME} PRIVATE 
+        ${SDL2_INCLUDE_DIRS}
+        ${SDL2_TTF_INCLUDE_DIR}
+)
+
 target_link_libraries(${PROJECT_NAME}
-        SDL2
-        SDL2_ttf
+        ${SDL2_LIBRARIES}
+        ${SDL2_TTF_LIBRARY}
         Eigen3::Eigen
+        ${OpenCV_LIBS}
         )
 
 add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD

@@ -1,8 +1,8 @@
 // System Includes
 #include <string>
 #include <iostream>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+#include <SDL.h>
+#include <SDL_ttf.h>
 
 #include "simulation.h"
 #include "car.h"
@@ -13,6 +13,10 @@ const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 768;
 const double GRID_SIZE = 500;
 const double GRID_SPACEING = 25;
+
+// Video recording settings
+const double VIDEO_FPS = 30.0;
+const std::string VIDEO_OUTPUT_FILE = "simulation_output.mp4";
 
 // Function Prototypes
 SimulationParams loadSimulation1Parameters();
@@ -29,6 +33,25 @@ SimulationParams loadSimulation0Parameters();
 // Main Loop
 int main( int argc, char* args[] )
 {
+    // Parse command line arguments
+    bool headlessMode = false;
+    bool recordVideo = false;
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string arg = args[i];
+        if (arg == "--headless")
+        {
+            headlessMode = true;
+            recordVideo = true;  // Headless mode implies video recording
+            std::cout << "Running in headless mode (video recording only, no display)" << std::endl;
+        }
+        else if (arg == "--record" || arg == "-r")
+        {
+            recordVideo = true;
+            std::cout << "Video recording enabled" << std::endl;
+        }
+    }
+
     Display mDisplay;
     Simulation mSimulation;
 
@@ -44,8 +67,14 @@ int main( int argc, char* args[] )
         return -1;
     }
 
-    // Create Display
-    if (!mDisplay.createRenderer("AKFSF Simulations", SCREEN_WIDTH, SCREEN_HEIGHT)){return false;}
+    // Create Display (pass headless flag)
+    if (!mDisplay.createRenderer("AKFSF Simulations", SCREEN_WIDTH, SCREEN_HEIGHT, headlessMode)){return -1;}
+
+    // Start video recording if enabled
+    if (recordVideo)
+    {
+        mDisplay.startVideoRecording(VIDEO_OUTPUT_FILE, VIDEO_FPS);
+    }
 
     // Main Simulation Loop
     mSimulation.reset(loadSimulation1Parameters());
@@ -74,7 +103,7 @@ int main( int argc, char* args[] )
         while( SDL_PollEvent( &event ) != 0 )
         {
             if( event.type == SDL_QUIT ){mRunning = false;}
-            else if (event.type == SDL_KEYDOWN)
+            else if (!headlessMode && event.type == SDL_KEYDOWN)
             {
                 switch( event.key.keysym.sym )
                 {               
@@ -98,7 +127,16 @@ int main( int argc, char* args[] )
                 }
             }
         }
+
+        // In headless mode, stop when simulation is complete
+        if (headlessMode && mSimulation.isSimulationComplete())
+        {
+            mRunning = false;
+        }
     }
+
+    // Stop video recording
+    mDisplay.stopVideoRecording();
 
     // Destroy Renderer
     mDisplay.destroyRenderer();

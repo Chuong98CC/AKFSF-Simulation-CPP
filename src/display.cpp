@@ -11,28 +11,41 @@ Display::Display()
  mScreenHeight(0),
  mWindow(nullptr),
  mRenderer(nullptr),
- mMainFont(nullptr)
+ mMainFont(nullptr),
+ mHeadless(false),
+ mIsRecording(false)
 {}
 
 Display::~Display()
 {
+    stopVideoRecording();
     destroyRenderer();
 }
 
-bool Display::createRenderer( std::string title, int screenWidth, int screenHeight )
+bool Display::createRenderer( std::string title, int screenWidth, int screenHeight, bool headless )
 {
     destroyRenderer();
 
     mScreenWidth = screenWidth;
     mScreenHeight = screenHeight;
+    mHeadless = headless;
 
     mViewWidth = mScreenWidth;
     mViewHeight = mScreenHeight;
     mViewXOffset = 0.0;
     mViewYOffset = 0.0;
     
-    // Create window
-    mWindow = SDL_CreateWindow( title.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, screenWidth, screenHeight, 0 );
+    if (mHeadless)
+    {
+        // Create hidden window for offscreen rendering
+        mWindow = SDL_CreateWindow( title.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, screenWidth, screenHeight, SDL_WINDOW_HIDDEN );
+    }
+    else
+    {
+        // Create visible window
+        mWindow = SDL_CreateWindow( title.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, screenWidth, screenHeight, 0 );
+    }
+    
     if( mWindow == nullptr )
     {
         std::cout << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
@@ -40,8 +53,9 @@ bool Display::createRenderer( std::string title, int screenWidth, int screenHeig
         return false;
     }
 
-    // Create Renderer
-    mRenderer = SDL_CreateRenderer( mWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+    // Create Renderer (use software renderer for headless mode for better compatibility)
+    Uint32 rendererFlags = mHeadless ? SDL_RENDERER_SOFTWARE : (SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    mRenderer = SDL_CreateRenderer( mWindow, -1, rendererFlags );
     if( mRenderer == nullptr )
     {
         std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError() << std::endl;
@@ -99,8 +113,85 @@ void Display::showScreen()
 {
     if (mRenderer != nullptr)
     {
-        SDL_RenderPresent( mRenderer );
+        // Capture frame before presenting if recording
+        if (mIsRecording)
+        {
+            captureFrame();
+        }
+        // Only present to screen if not in headless mode
+        if (!mHeadless)
+        {
+            SDL_RenderPresent( mRenderer );
+        }
     }
+}
+
+bool Display::startVideoRecording(const std::string& filename, double fps)
+{
+    if (mIsRecording)
+    {
+        std::cout << "Already recording!" << std::endl;
+        return false;
+    }
+
+    // Use MP4V codec for MP4 format
+    int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
+    
+    mVideoWriter.open(filename, fourcc, fps, cv::Size(mScreenWidth, mScreenHeight), true);
+    
+    if (!mVideoWriter.isOpened())
+    {
+        std::cout << "Could not open video file for writing: " << filename << std::endl;
+        return false;
+    }
+    
+    mIsRecording = true;
+    std::cout << "Started recording to: " << filename << std::endl;
+    return true;
+}
+
+void Display::stopVideoRecording()
+{
+    if (mIsRecording)
+    {
+        mVideoWriter.release();
+        mIsRecording = false;
+        std::cout << "Stopped recording." << std::endl;
+    }
+}
+
+void Display::captureFrame()
+{
+    if (!mIsRecording || mRenderer == nullptr)
+    {
+        return;
+    }
+
+    // Create a surface to read pixels into
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, mScreenWidth, mScreenHeight, 32, SDL_PIXELFORMAT_RGBA32);
+    if (surface == nullptr)
+    {
+        std::cout << "Failed to create surface for frame capture" << std::endl;
+        return;
+    }
+
+    // Read pixels from renderer
+    if (SDL_RenderReadPixels(mRenderer, nullptr, SDL_PIXELFORMAT_RGBA32, surface->pixels, surface->pitch) != 0)
+    {
+        std::cout << "Failed to read pixels: " << SDL_GetError() << std::endl;
+        SDL_FreeSurface(surface);
+        return;
+    }
+
+    // Convert to OpenCV Mat (RGBA -> BGR for video writing)
+    cv::Mat frame(mScreenHeight, mScreenWidth, CV_8UC4, surface->pixels, surface->pitch);
+    cv::Mat bgrFrame;
+    cv::cvtColor(frame, bgrFrame, cv::COLOR_RGBA2BGR);
+
+    // Write frame to video
+    mVideoWriter.write(bgrFrame);
+
+    SDL_FreeSurface(surface);
 }
 
 void Display::setView(double width, double height, double xOffset, double yOffset)

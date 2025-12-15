@@ -5,8 +5,9 @@
 #include <memory>
 #include <string>
 #include <iostream>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+#include <SDL.h>
+#include <SDL_ttf.h>
+#include <opencv2/opencv.hpp>
 
 template<typename ... Args>
 std::string string_format( const std::string& format, Args ... args )
@@ -38,8 +39,9 @@ class Display
         Display();
         ~Display();
 
-        bool createRenderer( std::string title, int screenWidth, int screenHeight );
-        void destroyRenderer(); 
+        bool createRenderer( std::string title, int screenWidth, int screenHeight, bool headless = false );
+        void destroyRenderer();
+        bool isHeadless() const { return mHeadless; } 
 
         void showScreen();
         void clearScreen();
@@ -57,6 +59,12 @@ class Display
         void drawLines(const std::vector<Vector2> &points);
         void drawLines(const std::vector<std::vector<Vector2>>& points);
 
+        // Video recording functions
+        bool startVideoRecording(const std::string& filename, double fps = 30.0);
+        void stopVideoRecording();
+        void captureFrame();
+        bool isRecording() const { return mIsRecording; }
+
     private:
 
         Vector2 transformPoint(const Vector2& point);
@@ -72,6 +80,11 @@ class Display
         SDL_Window* mWindow;
         SDL_Renderer* mRenderer;
         TTF_Font *mMainFont;
+        bool mHeadless;
+
+        // Video recording members
+        cv::VideoWriter mVideoWriter;
+        bool mIsRecording;
         
 };
 

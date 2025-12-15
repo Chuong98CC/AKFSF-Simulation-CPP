@@ -42,6 +42,8 @@ class KalmanFilter : public KalmanFilterBase
 {
     public:
 
+        KalmanFilter();
+
         VehicleState getVehicleState();
         Matrix2d getVehicleStatePositionCovariance();
 
@@ -51,6 +53,9 @@ class KalmanFilter : public KalmanFilterBase
         void handleLidarMeasurement(LidarMeasurement meas, const BeaconMap& map);
         void handleGPSMeasurement(GPSMeasurement meas);
 
+    private:
+        Matrix4d F;
+        Eigen::Matrix<double,4,2> L;
 };
 
 #endif  // INCLUDE_AKFSFSIM_KALMANFILTER_H

@@ -71,6 +71,7 @@ class Simulation
         void togglePauseSimulation();
         bool isPaused();
         bool isRunning();
+        bool isSimulationComplete() const { return !m_is_running; }
 
     private:
 
