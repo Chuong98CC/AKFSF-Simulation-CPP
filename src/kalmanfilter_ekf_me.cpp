@@ -81,10 +81,6 @@ VectorXd vehicleProcessModel(VectorXd aug_state, double psi_dot, double dt)
 }
 // ----------------------------------------------------------------------- //
 
-KalmanFilter::KalmanFilter()
-{
-    // Constructor - initialization is done in handleGPSMeasurement
-}
 
 void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap& map)
 {
@@ -103,17 +99,15 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
         // map_beacon.x and map_beacon.y
         // ----------------------------------------------------------------------- //
         // ENTER YOUR CODE HERE
-        double px = state(0);
-        double py = state(1);
-        double psi = state(2);
         BeaconData map_beacon = map.getBeaconWithId(meas.id); // Match Beacon with built in Data Association Id
         if (meas.id != -1 && map_beacon.id != -1) // Check that we have a valid beacon match
         {
+            double px = state(0);
+            double py = state(1);
+            double psi = state(2);
             // predict the measurement using the prior state and the process model
-            double Lx = map_beacon.x;
-            double Ly = map_beacon.y;
-            double dx = px - Lx;
-            double dy = py - Ly;
+            double dx = px - map_beacon.x;
+            double dy = py - map_beacon.y;
             double r2 =  dx*dx + dy*dy;
             double r_hat = sqrt(r2);                         
             double theta_hat = atan2( dy, dx ) - psi;
@@ -121,29 +115,28 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
             z_hat << r_hat, theta_hat;  
             z_hat = normaliseLidarMeasurement(z_hat);
  
-            // compute the measurement residual
-            Vector2d z;
-            z << meas.range, meas.theta;
-            z = normaliseLidarMeasurement(z);
-            Vector2d y = z - z_hat;
-
             //  Compute Jacobian H
             Eigen::Matrix<double, 2, 4> H;
             H << dx/r_hat, dy/r_hat, 0, 0,
-                 -dy/r2, dx/r2, -1, 0;
+            -dy/r2, dx/r2, -1, 0;
+            
             // Compute measurement covariance R
             Matrix2d R = Matrix2d::Zero();
             R(0,0) = LIDAR_RANGE_STD*LIDAR_RANGE_STD;
             R(1,1) = LIDAR_THETA_STD*LIDAR_THETA_STD;
             // Compute Sensor Covariance S
             Matrix2d S = H * cov * H.transpose() + R;
-
+            
             // Compute Kalman Gain K
             MatrixXd K = cov * H.transpose() * S.inverse();
+
             // Update State and Covariance
-            state = state + K * y;
+            // compute the measurement residual
+            Vector2d z;
+            z << meas.range, meas.theta;
+            Vector2d y = z - z_hat;
+            state = state + K * normaliseLidarMeasurement(y);
             cov = (MatrixXd::Identity(4,4) - K * H) * cov;
-            state = normaliseState(state);
         }
         // ----------------------------------------------------------------------- //
 

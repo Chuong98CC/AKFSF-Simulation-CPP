@@ -129,7 +129,7 @@ void KalmanFilter::predictionStep(GyroMeasurement gyro, double dt)
         double y_new = y + dt * V * sin(psi);
         double psi_new = wrapAngle(psi + dt * (gyro.psi_dot - bias)); // Added Gyroscope Bias (CAPSTONE)
         double V_new = V;
-        state << x_new,y_new,psi_new,V_new,bias_new; // Adding Gyro Bias State (CAPSTONE)
+        state << x_new,y_new,psi_new,V_new,bias; // Adding Gyro Bias State (CAPSTONE)
 
         // Generate F Matrix
         MatrixXd F = MatrixXd::Zero(5,5);
@@ -252,7 +252,7 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
             cov(3,3) = INIT_VEL_STD*INIT_VEL_STD;
             cov(4,4) = GYRO_STD*GYRO_STD;
 
-            std::cout << "FILTER INIT" << time << std::endl;
+            std::cout << "FILTER INIT" << std::endl;
             
             setState(state);
             setCovariance(cov);
