@@ -41,9 +41,6 @@ class KalmanFilterBase
 class KalmanFilter : public KalmanFilterBase
 {
     public:
-
-        KalmanFilter();
-
         VehicleState getVehicleState();
         Matrix2d getVehicleStatePositionCovariance();
 

@@ -54,6 +54,7 @@ std::vector<VectorXd> generateSigmaPoints(VectorXd state, MatrixXd cov)
 
     return sigmaPoints;
 }
+
 std::vector<double> generateSigmaWeights(unsigned int numStates)
 {
     std::vector<double> weights;
@@ -81,10 +82,8 @@ VectorXd lidarMeasurementModel(VectorXd aug_state, double beaconX, double beacon
     double x = aug_state(0);
     double y = aug_state(1);
     double psi = aug_state(2);
-    double V = aug_state(3);
-    double gyro_bias = aug_state(4);
-    double range_noise = aug_state(5);
-    double theta_noise = aug_state(6);
+    double range_noise = aug_state(4);
+    double theta_noise = aug_state(5);
 
     double delta_x = beaconX - x;
     double delta_y = beaconY - y;
@@ -99,19 +98,17 @@ VectorXd lidarMeasurementModel(VectorXd aug_state, double beaconX, double beacon
 
 VectorXd vehicleProcessModel(VectorXd aug_state, double psi_dot, double dt)
 {
-    VectorXd new_state = VectorXd::Zero(5); // [PX, PY, PSI, V, GYRO_BIAS]
+    VectorXd new_state = VectorXd::Zero(4);
 
     // ----------------------------------------------------------------------- //
     // ENTER YOUR CODE HERE
-    VectorXd state = aug_state.head(5);
-    double psi = state(2);
+    Vector4d state = aug_state.head(4);
     double V = state(3);
-    double gyro_bias = state(4);
-    new_state(0) = state(0) + V * cos(psi) * dt;        
-    new_state(1) = state(1) + V * sin(psi) * dt;
-    new_state(2) = state(2) + (psi_dot - gyro_bias + aug_state(5)) * dt;
-    new_state(3) = state(3) + aug_state(6) * dt;
-    new_state(4) = state(4);
+    double PSI = state(2);
+    new_state(0) = state(0) + V * cos(PSI) * dt;
+    new_state(1) = state(1) + V * sin(PSI) * dt;
+    new_state(2) = state(2) + (psi_dot + aug_state(4)) * dt;
+    new_state(3) = state(3) + aug_state(5) * dt;
     // ----------------------------------------------------------------------- //
 
     return new_state;
@@ -141,12 +138,12 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
         if (meas.id != -1 && map_beacon.id != -1) // Check that we have a valid beacon match
         {
             // augment state and covariance
-            VectorXd aug_state = VectorXd::Zero(7);
-            aug_state.head(5) = state;
-            MatrixXd aug_cov = MatrixXd::Zero(7,7);
-            aug_cov.topLeftCorner(5,5) = cov;
-            aug_cov(5,5) = LIDAR_RANGE_STD*LIDAR_RANGE_STD;
-            aug_cov(6,6) = LIDAR_THETA_STD*LIDAR_THETA_STD;
+            VectorXd aug_state = VectorXd::Zero(6);
+            aug_state.head(4) = state;
+            MatrixXd aug_cov = MatrixXd::Zero(6,6);
+            aug_cov.topLeftCorner(4,4) = cov;
+            aug_cov(4,4) = LIDAR_RANGE_STD*LIDAR_RANGE_STD;
+            aug_cov(5,5) = LIDAR_THETA_STD*LIDAR_THETA_STD;
             // generate sigma points
             std::vector<VectorXd> sigmaPoints = generateSigmaPoints(aug_state, aug_cov);
             std::vector<double> weights = generateSigmaWeights(aug_state.size());
@@ -193,14 +190,6 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
 
         setState(state);
         setCovariance(cov);
-    }
-    else {
-        VectorXd state = getState();
-        MatrixXd cov = getCovariance();
-        double px = state(0);
-        double py = state(1);
-        double psi = state(2);
-        BeaconData map_beacon = map.getBeaconWithId(meas.id); // Match Beacon with built in Data Association Id
     }
 }
 
@@ -293,8 +282,8 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
         // ----------------------------------------------------------------------- //
         // YOU ARE FREE TO MODIFY THE FOLLOWING CODE HERE
 
-        VectorXd state = VectorXd::Zero(5);
-        MatrixXd cov = MatrixXd::Zero(5,5);
+        VectorXd state = Vector4d::Zero();
+        MatrixXd cov = Matrix4d::Zero();
 
         state(0) = meas.x;
         state(1) = meas.y;
@@ -305,7 +294,7 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
 
         setState(state);
         setCovariance(cov);
-        reset(); // set the initialised flag in the base class to false
+
         // ----------------------------------------------------------------------- //
     }             
 }
@@ -313,47 +302,7 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
 void KalmanFilter::handleLidarMeasurements(const std::vector<LidarMeasurement>& dataset, const BeaconMap& map)
 {
     // Assume No Correlation between the Measurements and Update Sequentially
-    // perform data association for each lidar measurement if id is not given
-    auto meas = dataset[0];
-    if (meas.id == -1) {    
-        // find the maximum lidar range to search for associated beacons
-        double max_lidar_range = std::max_element(dataset.begin(), dataset.end(),
-            [](const auto& a, const auto& b) { return a.range < b.range; })->range;
-        VectorXd state = getState();
-        double px = state(0);
-        double py = state(1);
-        double psi = state(2);
-        // get list of beacons within lidar range
-        std::vector<BeaconData> nearby_beacons = map.getBeaconsWithinRange(px, py, max_lidar_range);
-        int num_beacons = nearby_beacons.size();
-        int num_measurements = dataset.size();
-        // build association matrix
-        Eigen::MatrixXd association_matrix = Eigen::MatrixXd::Zero(num_measurements, num_beacons);
-        for (int i = 0; i < num_measurements; ++i) {
-            for (int j = 0; j < num_beacons; ++j) {
-                double expected_range = sqrt(pow(nearby_beacons[j].x - px, 2) + pow(nearby_beacons[j].y - py, 2));
-                double expected_bearing = atan2(nearby_beacons[j].y - py, nearby_beacons[j].x) - psi;
-                double range_diff = dataset[i].range - expected_range;
-                double bearing_diff = wrapAngle(dataset[i].theta - expected_bearing);
-                double mahalanobis_distance = sqrt(pow(range_diff / LIDAR_RANGE_STD, 2) + pow(bearing_diff / LIDAR_THETA_STD, 2));
-                association_matrix(i, j) = mahalanobis_distance;
-            }
-        }
-        // solve assignment problem using greedy algorithm
-        std::vector<int> assigned_beacon_ids(num_measurements, -1);
-        std::vector<bool> beacon_assigned(num_beacons, false);
-        for (int i = 0; i < num_measurements; ++i) {
-            double min_distance = std::numeric_limits<double>::max();
-            int best_beacon = -1;
-            for (int j = 0; j < num_beacons; ++j) {
-                if (!beacon_assigned[j] && association_matrix(i, j) < min_distance) {
-                    min_distance = association_matrix(i, j);
-                    best_beacon = j;
-    }
-    for(const auto& meas : dataset) {
-        // add data association here
-        handleLidarMeasurement(meas, map);
-    }
+    for(const auto& meas : dataset) {handleLidarMeasurement(meas, map);}
 }
 
 Matrix2d KalmanFilter::getVehicleStatePositionCovariance()
