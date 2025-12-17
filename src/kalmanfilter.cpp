@@ -13,11 +13,16 @@
 // YOU CAN USE AND MODIFY THESE CONSTANTS HERE
 constexpr double ACCEL_STD = 0.05;
 constexpr double GYRO_STD = 0.01/180.0 * M_PI;
+constexpr double GYRO_BIAS_STD = 0.005/180.0 * M_PI; // Gyro Bias Process Model Noise (CAPSTONE)
 constexpr double INIT_VEL_STD = 2;
 constexpr double INIT_PSI_STD = 5.0/180.0 * M_PI;
 constexpr double GPS_POS_STD = 3.0;
 constexpr double LIDAR_RANGE_STD = 3.0;
 constexpr double LIDAR_THETA_STD = 0.02;
+
+constexpr int num_state = 5; // [px, py, psi, v, gyro_bias]
+constexpr int num_meas_lidar = 2;
+constexpr int num_meas_gps = 2;
 // -------------------------------------------------- //
 
 // ----------------------------------------------------------------------- //
@@ -32,55 +37,7 @@ VectorXd normaliseLidarMeasurement(VectorXd meas)
     meas(1) = wrapAngle(meas(1));
     return meas;
 }
-std::vector<VectorXd> generateSigmaPoints(VectorXd state, MatrixXd cov)
-{
-    std::vector<VectorXd> sigmaPoints;
-
-    // ----------------------------------------------------------------------- //
-    // ENTER YOUR CODE HERE
-
-    // ----------------------------------------------------------------------- //
-
-    return sigmaPoints;
-}
-
-std::vector<double> generateSigmaWeights(unsigned int numStates)
-{
-    std::vector<double> weights;
-
-    // ----------------------------------------------------------------------- //
-    // ENTER YOUR CODE HERE
-
-    // ----------------------------------------------------------------------- //
-
-    return weights;
-}
-
-VectorXd lidarMeasurementModel(VectorXd aug_state, double beaconX, double beaconY)
-{
-    VectorXd z_hat = VectorXd::Zero(2);
-
-    // ----------------------------------------------------------------------- //
-    // ENTER YOUR CODE HERE
-
-    // ----------------------------------------------------------------------- //
-
-    return z_hat;
-}
-
-VectorXd vehicleProcessModel(VectorXd aug_state, double psi_dot, double dt)
-{
-    VectorXd new_state = VectorXd::Zero(4);
-
-    // ----------------------------------------------------------------------- //
-    // ENTER YOUR CODE HERE
-
-    // ----------------------------------------------------------------------- //
-
-    return new_state;
-}
 // ----------------------------------------------------------------------- //
-
 
 void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap& map)
 {
@@ -116,9 +73,9 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
             z_hat = normaliseLidarMeasurement(z_hat);
  
             //  Compute Jacobian H
-            Eigen::Matrix<double, 2, 4> H;
-            H << dx/r_hat, dy/r_hat, 0, 0,
-            -dy/r2, dx/r2, -1, 0;
+            Eigen::Matrix<double, 2, num_state> H;
+            H << dx/r_hat, dy/r_hat, 0, 0, 0,
+                -dy/r2, dx/r2, -1, 0, 0;
             
             // Compute measurement covariance R
             Matrix2d R = Matrix2d::Zero();
@@ -136,7 +93,7 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
             z << meas.range, meas.theta;
             Vector2d y = z - z_hat;
             state = state + K * normaliseLidarMeasurement(y);
-            cov = (MatrixXd::Identity(4,4) - K * H) * cov;
+            cov = (MatrixXd::Identity(num_state,num_state) - K * H) * cov;
         }
         // ----------------------------------------------------------------------- //
 
@@ -161,23 +118,29 @@ void KalmanFilter::predictionStep(GyroMeasurement gyro, double dt)
         // HINT: Do NOT normalise during sigma point calculation!
         // ----------------------------------------------------------------------- //
         // ENTER YOUR CODE HERE
+        double psi = state(2);
+        double V = state(3);
+        double gyro_bias = state(4);
+        double psi_dot = gyro.psi_dot;
+
         // Prediction state
-        Vector4d input = Vector4d::Zero();
-        float V = state(3);
-        float PSI = state(2);
-        float psi_dot = gyro.psi_dot;
-        input << V*cos(PSI), V*sin(PSI), psi_dot, 0;
+        VectorXd input = VectorXd::Zero(num_state);
+        input << V*cos(psi), V*sin(psi), psi_dot - gyro_bias, 0, 0;
         state += input*dt;
         state = normaliseState(state);
+
         // Prediction covariance
-        Matrix4d Q = Matrix4d::Zero();
+        MatrixXd Q = MatrixXd::Zero(num_state,num_state);
         Q(2,2) = dt*dt*GYRO_STD*GYRO_STD;  
         Q(3,3) = dt*dt*ACCEL_STD*ACCEL_STD;
-        Matrix4d F = Matrix4d::Identity();
-        F(0,2) = -V*sin(PSI)*dt;
-        F(0,3) = cos(PSI)*dt;
-        F(1,2) = V*cos(PSI)*dt;
-        F(1,3) = sin(PSI)*dt;
+        Q(4,4) = dt*dt*GYRO_BIAS_STD*GYRO_BIAS_STD;  // process noise for gyro bias
+
+        MatrixXd F = MatrixXd::Identity(num_state,num_state);
+        F(0,2) = -V*sin(psi)*dt;
+        F(0,3) = cos(psi)*dt;
+        F(1,2) = V*cos(psi)*dt;
+        F(1,3) = sin(psi)*dt;
+        F(2,4) = -dt; // added for gyro bias
         cov = F*cov*F.transpose() + Q;
         // ----------------------------------------------------------------------- //
 
@@ -196,21 +159,22 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
         MatrixXd cov = getCovariance();
 
         VectorXd z = Vector2d::Zero();
-        MatrixXd H = MatrixXd(2,4);
+        MatrixXd H = MatrixXd::Zero(num_meas_gps,num_state);
         MatrixXd R = Matrix2d::Zero();
 
         z << meas.x,meas.y;
-        H << 1,0,0,0,0,1,0,0;
+        H(0,0) = 1;
+        H(1,1) = 1;
         R(0,0) = GPS_POS_STD*GPS_POS_STD;
         R(1,1) = GPS_POS_STD*GPS_POS_STD;
 
         VectorXd z_hat = H * state;
-        VectorXd y = z - z_hat;
+        VectorXd z_error = z - z_hat;
         MatrixXd S = H * cov * H.transpose() + R;
         MatrixXd K = cov*H.transpose()*S.inverse();
 
-        state = state + K*y;
-        cov = (MatrixXd::Identity(4,4) - K*H) * cov;
+        state = state + K*z_error;
+        cov = (MatrixXd::Identity(num_state,num_state) - K*H) * cov;
 
         setState(state);
         setCovariance(cov);
@@ -222,8 +186,8 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
         // ----------------------------------------------------------------------- //
         // YOU ARE FREE TO MODIFY THE FOLLOWING CODE HERE
 
-        VectorXd state = Vector4d::Zero();
-        MatrixXd cov = Matrix4d::Zero();
+        VectorXd state = VectorXd::Zero(num_state);
+        MatrixXd cov = MatrixXd::Zero(num_state,num_state);
 
         state(0) = meas.x;
         state(1) = meas.y;
