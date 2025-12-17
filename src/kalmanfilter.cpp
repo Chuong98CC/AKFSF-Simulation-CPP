@@ -147,6 +147,12 @@ void KalmanFilter::predictionStep(GyroMeasurement gyro, double dt)
         setState(state);
         setCovariance(cov);
     } 
+    else{
+        // Assume Driving Straight or Stationary to Estimate Gyro Bias (CAPSTONE)
+        m_init_bias = gyro.psi_dot;
+        m_init_bias_valid = true;
+        std::cout << "INIT<BIAS> @ " << m_init_bias << std::endl;
+    }
 }
 
 void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
@@ -186,18 +192,61 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
         // ----------------------------------------------------------------------- //
         // YOU ARE FREE TO MODIFY THE FOLLOWING CODE HERE
 
-        VectorXd state = VectorXd::Zero(num_state);
-        MatrixXd cov = MatrixXd::Zero(num_state,num_state);
+        if (!m_init_position_valid)
+        {
+            m_init_position_x = meas.x;
+            m_init_position_y = meas.y;
+            m_init_position_valid = true;
+            std::cout << "INIT<POSITION> @ " << m_init_position_x << "," << m_init_position_y << std::endl;
+        }
+        // else if (!m_init_velocity_valid)
+        // {
+        //     double delta_x = meas.x - m_init_position_x;
+        //     double delta_y = meas.y - m_init_position_y;
+        //     // Estimate Velocity from Delta Position (Assuming Small Time Difference between Measurements)
+        //     m_init_velocity = sqrt(delta_x*delta_x + delta_y*delta_y);
+        //     m_init_velocity_valid = true;
+        //     std::cout << "INIT<VELOCITY> @ " << m_init_velocity << std::endl;
+        // }
+        m_init_velocity = 0;
+        m_init_velocity_valid = true;
+        std::cout << "INIT<VELOCITY> @ " << m_init_velocity << std::endl;
+        if (!m_init_heading_valid && m_init_position_valid)
+        {
+            double delta_x = meas.x - m_init_position_x;
+            double delta_y = meas.y - m_init_position_y;
+            // Check If We have moved Enough
+            if ((delta_x*delta_x + delta_y*delta_y) > 3*GPS_POS_STD)
+            {
+                // Estimate Heading from
+                m_init_heading = atan2(delta_y,delta_x);
+                m_init_heading_valid = true;
+                std::cout << "INIT<HEADING> @ " << m_init_heading << std::endl;
+            }
+        }
+        
+        if (m_init_position_valid &&
+            m_init_heading_valid &&
+            m_init_velocity_valid &&
+            m_init_bias_valid)
+        {
+            VectorXd state = VectorXd::Zero(num_state);
+            MatrixXd cov = MatrixXd::Zero(num_state,num_state);
 
-        state(0) = meas.x;
-        state(1) = meas.y;
-        cov(0,0) = GPS_POS_STD*GPS_POS_STD;
-        cov(1,1) = GPS_POS_STD*GPS_POS_STD;
-        cov(2,2) = INIT_PSI_STD*INIT_PSI_STD;
-        cov(3,3) = INIT_VEL_STD*INIT_VEL_STD;
-
-        setState(state);
-        setCovariance(cov);
+            state(0) = meas.x;
+            state(1) = meas.y;
+            state(2) = m_init_heading; 
+            state(3) = m_init_velocity;
+            state(4) = m_init_bias; // Initial Gyro Bias 
+            cov(0,0) = GPS_POS_STD*GPS_POS_STD;
+            cov(1,1) = GPS_POS_STD*GPS_POS_STD;
+            cov(2,2) = INIT_PSI_STD*INIT_PSI_STD;
+            cov(3,3) = INIT_VEL_STD*INIT_VEL_STD;
+            cov(4,4) = GYRO_BIAS_STD*GYRO_BIAS_STD; // Initial Gyro Bias Uncertainty
+            std::cout << "FILTER Fully INIT" << std::endl;
+            setState(state);
+            setCovariance(cov);
+        }
 
         // ----------------------------------------------------------------------- //
     }             
