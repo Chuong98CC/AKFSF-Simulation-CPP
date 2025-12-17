@@ -312,90 +312,103 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
 void KalmanFilter::handleLidarMeasurements(const std::vector<LidarMeasurement>& dataset, const BeaconMap& map)
 {
     auto meas = dataset[0];
+    if (meas.id != -1) {  
+        // for simulation that provides data association id directly
+        for(const auto& meas : dataset) {
+            handleLidarMeasurement(meas, map);
+        }
+        return;
+    }
+    // no data association id provided, need to perform data association
+    if (!init_GPS){
+        // cannot process lidar measurements before GPS initialisation
+        return;
+    }
+    // add data association here
     std::vector<LidarMeasurement> dataset_copy = dataset;
-    if (meas.id == -1) {    
-        // no data association id provided, need to perform data association
-        VectorXd state = getState();
-        MatrixXd cov = getCovariance();
-        double px = state(0);
-        double py = state(1);
-        double psi = state(2);
+    VectorXd state = getState();
+    MatrixXd cov = getCovariance();
+    double px = state(0);
+    double py = state(1);
+    double psi = state(2);
 
-        // find the maximum lidar range to search for associated beacons
-        double max_lidar_range = std::max_element(dataset.begin(), dataset.end(),
-            [](const auto& a, const auto& b) { return a.range < b.range; })->range;
-        // get list of beacons within lidar range
-        double range_margin = 3.0 * LIDAR_RANGE_STD + 6*sqrt(cov(0,0) + cov(1,1));
-        std::vector<BeaconData> nearby_beacons = map.getBeaconsWithinRange(px, py, max_lidar_range+ range_margin); // add some margin
-        int num_beacons = nearby_beacons.size();
-        int num_measurements = dataset.size();
-        if (num_beacons<1 || num_measurements<1){
-            return;
-        }
+    // find the maximum lidar range to search for associated beacons
+    double max_lidar_range = std::max_element(dataset.begin(), dataset.end(),
+        [](const auto& a, const auto& b) { return a.range < b.range; })->range;
+    // get list of beacons within lidar range
+    double range_margin = 3.0 * LIDAR_RANGE_STD + 6*sqrt(cov(0,0) + cov(1,1));
+    std::vector<BeaconData> nearby_beacons = map.getBeaconsWithinRange(px, py, max_lidar_range+ range_margin); // add some margin
+    int num_beacons = nearby_beacons.size();
+    int num_measurements = dataset.size();
+    if (num_beacons<1 || num_measurements<1){
+        return;
+    }
 
-        // build association matrix
-        Eigen::MatrixXd association_matrix = Eigen::MatrixXd::Zero(num_measurements, num_beacons);
-        for (int i = 0; i < num_measurements; ++i) {
-            double meas_range = dataset[i].range;
-            double meas_bearing = dataset[i].theta;
-            for (int j = 0; j < num_beacons; ++j) {
-                double dx = nearby_beacons[j].x - px;
-                double dy = nearby_beacons[j].y - py;
-                double expected_range = sqrt(dx*dx + dy*dy);
-                double range_diff = fabs(meas_range - expected_range)/ LIDAR_RANGE_STD;
-                if (init_lidar){
-                    // if filter is initialised, use both range and bearing for association
-                    double expected_bearing = wrapAngle(atan2(dy, dx) - psi);
-                    double bearing_diff = fabs(meas_bearing - expected_bearing)/ LIDAR_THETA_STD;
-                    association_matrix(i, j) = sqrt(range_diff*range_diff + bearing_diff*bearing_diff);          
-                }
-                else{
-                    // if filter is not initialised, use only range for association. we need to estimate the heading
-                    association_matrix(i, j) = range_diff;
-                }
-            }
-        }
-        // solve assignment problem: 
-        // 1 lidar measurement can be associated to only 1 beacon, 
-        // but 1 beacon can be associated to multiple lidar measurements
-        for (int i = 0; i < num_measurements; ++i) {
-            Eigen::Index minIndex;
-            double minValue = association_matrix.row(i).minCoeff(&minIndex);
-            dataset_copy[i].id = nearby_beacons[minIndex].id;    
-            // if (minValue < 3.0) { // threshold for association based on 3-sigma rule
-            //     dataset_copy[i].id = nearby_beacons[minIndex].id;    
+    // build association matrix
+    Eigen::MatrixXd association_matrix = Eigen::MatrixXd::Zero(num_measurements, num_beacons);
+    for (int i = 0; i < num_measurements; ++i) {
+        double meas_range = dataset[i].range;
+        double meas_bearing = dataset[i].theta;
+        for (int j = 0; j < num_beacons; ++j) {
+            double dx = nearby_beacons[j].x - px;
+            double dy = nearby_beacons[j].y - py;
+            double expected_range = sqrt(dx*dx + dy*dy);
+            double range_diff = fabs(meas_range - expected_range)/ LIDAR_RANGE_STD;
+            // if (init_lidar){
+            //     // if filter is initialised, use both range and bearing for association
+            //     double expected_bearing = wrapAngle(atan2(dy, dx) - psi);
+            //     double bearing_diff = fabs(meas_bearing - expected_bearing)/ LIDAR_THETA_STD;
+            //     association_matrix(i, j) = sqrt(range_diff*range_diff + bearing_diff*bearing_diff);          
             // }
-        }
-        // find the bearing if not initialised
-        // if (!isInitialised()){
-        if (!init_lidar){
-            std::vector<double> psi_candidates;
-            for (const auto& meas : dataset_copy) {
-                if (meas.id != -1){
-                    BeaconData assoc_beacon = map.getBeaconWithId(meas.id);
-                    double dx = assoc_beacon.x - px;
-                    double dy = assoc_beacon.y - py;
-                    double expected_bearing = atan2(dy, dx);
-                    psi = wrapAngle(expected_bearing - meas.theta);
-                    psi_candidates.push_back(psi);
-                }
-            }
-            if (!psi_candidates.empty()) {
-                // average the candidate headings through circular mean to handle angle wrapping
-                double sum_sin = 0.0;
-                double sum_cos = 0.0;
-                for (double angle : psi_candidates) {
-                    sum_sin += sin(angle);
-                    sum_cos += cos(angle);
-                }
-                psi = atan2(sum_sin, sum_cos);
-                state(2) = psi;
-                setState(state);
-                init_lidar = true;  // Mark lidar as initialized (heading estimated)
-                // m_initialised = init_GPS && init_lidar;
-            }
+            // else{
+            //     // if filter is not initialised, use only range for association. we need to estimate the heading
+            //     association_matrix(i, j) = range_diff;
+            // }
+            association_matrix(i, j) = range_diff;
         }
     }
+    // solve assignment problem: 
+    // 1 lidar measurement can be associated to only 1 beacon, 
+    // but 1 beacon can be associated to multiple lidar measurements
+    for (int i = 0; i < num_measurements; ++i) {
+        Eigen::Index minIndex;
+        double minValue = association_matrix.row(i).minCoeff(&minIndex);
+        // dataset_copy[i].id = nearby_beacons[minIndex].id;    
+        if (minValue < 3.0) { // threshold for association based on 3-sigma rule
+            dataset_copy[i].id = nearby_beacons[minIndex].id;    
+        }
+    }
+    // find the bearing if not initialised
+    // if (!isInitialised()){
+    if (!init_lidar){
+        std::vector<double> psi_candidates;
+        for (const auto& meas : dataset_copy) {
+            if (meas.id != -1){
+                BeaconData assoc_beacon = map.getBeaconWithId(meas.id);
+                double dx = assoc_beacon.x - px;
+                double dy = assoc_beacon.y - py;
+                double expected_bearing = atan2(dy, dx);
+                psi = wrapAngle(expected_bearing - meas.theta);
+                psi_candidates.push_back(psi);
+            }
+        }
+        if (!psi_candidates.empty()) {
+            // average the candidate headings through circular mean to handle angle wrapping
+            double sum_sin = 0.0;
+            double sum_cos = 0.0;
+            for (double angle : psi_candidates) {
+                sum_sin += sin(angle);
+                sum_cos += cos(angle);
+            }
+            psi = atan2(sum_sin, sum_cos);
+            state(2) = psi;
+            setState(state);
+            init_lidar = true;  // Mark lidar as initialized (heading estimated)
+            // m_initialised = init_GPS && init_lidar;
+        }
+    }
+    
+
     for(const auto& meas : dataset_copy) {
         // add data association here
         handleLidarMeasurement(meas, map);
