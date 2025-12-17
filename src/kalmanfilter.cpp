@@ -169,7 +169,7 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
             for (unsigned int i = 0; i < predictedMeasSigmaPoints.size(); ++i)
             {
                 VectorXd diff = predictedMeasSigmaPoints[i] - z_mean;
-                diff(1) = wrapAngle(diff(1));  // Wrap angle difference
+                // diff(1) = wrapAngle(diff(1));  // Wrap angle difference
                 S += weights[i] * (diff * diff.transpose());    
             }
             // calculate cross correlation matrix
@@ -177,9 +177,9 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
             for (unsigned int i = 0; i < predictedMeasSigmaPoints.size(); ++i)
             {
                 VectorXd x_diff = sigmaPoints[i].head(5) - state;
-                x_diff(2) = wrapAngle(x_diff(2));  // Wrap angle difference
+                // x_diff(2) = wrapAngle(x_diff(2));  // Wrap angle difference
                 VectorXd z_diff = predictedMeasSigmaPoints[i] - z_mean;
-                z_diff(1) = wrapAngle(z_diff(1));  // Wrap angle difference
+                // z_diff(1) = wrapAngle(z_diff(1));  // Wrap angle difference
                 Pxz += weights[i] * (x_diff * z_diff.transpose());
             }
 
@@ -187,7 +187,7 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
             MatrixXd K = Pxz * S.inverse();
             // update state and covariances
             VectorXd innovation = Vector2d(meas.range, meas.theta) - z_mean;
-            innovation(1) = wrapAngle(innovation(1));  // Wrap angle difference
+            // innovation(1) = wrapAngle(innovation(1));  // Wrap angle difference
             state += K * innovation;
             state = normaliseState(state);
             // update covariance
@@ -244,7 +244,7 @@ void KalmanFilter::predictionStep(GyroMeasurement gyro, double dt)
         for (unsigned int i = 0; i < predictedSigmaPoints.size(); ++i)
         {
             VectorXd diff = predictedSigmaPoints[i] - pred_state;
-            diff(2) = wrapAngle(diff(2)); // Only wrap the angle difference
+            // diff(2) = wrapAngle(diff(2)); // Only wrap the angle difference
             pred_cov += weights[i] * (diff * diff.transpose());
         }
         // ----------------------------------------------------------------------- //

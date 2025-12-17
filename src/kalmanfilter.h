@@ -20,9 +20,9 @@ class KalmanFilterBase
 {
     public:
 
-        KalmanFilterBase():m_initialised(false){}
+        KalmanFilterBase():m_initialised(false), init_GPS(false), init_lidar(false){}
         virtual ~KalmanFilterBase(){}
-        void reset(){m_initialised = false;}
+        void reset(){m_initialised = false; init_GPS = false; init_lidar = false;}
         bool isInitialised() const {return m_initialised;}
 
     protected:
@@ -32,6 +32,8 @@ class KalmanFilterBase
         void setState(const VectorXd& state ) {m_state = state; m_initialised = true;}
         void setCovariance(const MatrixXd& cov ){m_covariance = cov;}
         bool m_initialised;
+        bool init_GPS;
+        bool init_lidar;
 
     private:
         VectorXd m_state;
@@ -41,8 +43,6 @@ class KalmanFilterBase
 class KalmanFilter : public KalmanFilterBase
 {
     public:
-        KalmanFilter() : init_GPS(false), init_lidar(false) {}
-        
         VehicleState getVehicleState();
         Matrix2d getVehicleStatePositionCovariance();
 
@@ -52,9 +52,6 @@ class KalmanFilter : public KalmanFilterBase
         void handleLidarMeasurement(LidarMeasurement meas, const BeaconMap& map);
         void handleGPSMeasurement(GPSMeasurement meas);
 
-    private:
-        bool init_GPS;
-        bool init_lidar;
 };
 
 #endif  // INCLUDE_AKFSFSIM_KALMANFILTER_H
