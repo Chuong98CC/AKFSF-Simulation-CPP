@@ -110,7 +110,7 @@ VectorXd vehicleProcessModel(VectorXd aug_state, double psi_dot, double dt)
     double gyro_bias = state(4);
     new_state(0) = state(0) + V * cos(psi) * dt;        
     new_state(1) = state(1) + V * sin(psi) * dt;
-    new_state(2) = state(2) + (psi_dot - gyro_bias + aug_state(5)) * dt;
+    new_state(2) = wrapAngle(state(2) + (psi_dot - gyro_bias + aug_state(5)) * dt);
     new_state(3) = state(3) + aug_state(6) * dt;
     new_state(4) = state(4);
     // ----------------------------------------------------------------------- //
@@ -185,7 +185,8 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
             // calculate Kalman gain K
             MatrixXd K = Pxz * S.inverse();
             // update state and covariances
-            state += K * normaliseLidarMeasurement(Vector2d(meas.range, meas.theta) - z_mean);
+            VectorXd innovation = normaliseLidarMeasurement(Vector2d(meas.range, meas.theta) - z_mean);
+            state += K * innovation;
             cov -= K * S * K.transpose();
             // state = normaliseState(state);
             // update covariance
