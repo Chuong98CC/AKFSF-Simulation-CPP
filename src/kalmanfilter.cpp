@@ -258,7 +258,7 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
 {
     // All this code is the same as the LKF as the measurement model is linear
     // so the UKF update state would just produce the same result.
-    if(isInitialised())
+    if(init_GPS)
     {
         VectorXd state = getState();
         MatrixXd cov = getCovariance();
@@ -316,6 +316,7 @@ void KalmanFilter::handleLidarMeasurements(const std::vector<LidarMeasurement>& 
     if (meas.id == -1) {    
         // no data association id provided, need to perform data association
         VectorXd state = getState();
+        MatrixXd cov = getCovariance();
         double px = state(0);
         double py = state(1);
         double psi = state(2);
@@ -323,9 +324,9 @@ void KalmanFilter::handleLidarMeasurements(const std::vector<LidarMeasurement>& 
         // find the maximum lidar range to search for associated beacons
         double max_lidar_range = std::max_element(dataset.begin(), dataset.end(),
             [](const auto& a, const auto& b) { return a.range < b.range; })->range;
-
         // get list of beacons within lidar range
-        std::vector<BeaconData> nearby_beacons = map.getBeaconsWithinRange(px, py, max_lidar_range+1.0); // add some margin
+        double range_margin = 3.0 * LIDAR_RANGE_STD + 6*sqrt(cov(0,0) + cov(1,1));
+        std::vector<BeaconData> nearby_beacons = map.getBeaconsWithinRange(px, py, max_lidar_range+ range_margin); // add some margin
         int num_beacons = nearby_beacons.size();
         int num_measurements = dataset.size();
         if (num_beacons<1 || num_measurements<1){
@@ -342,7 +343,7 @@ void KalmanFilter::handleLidarMeasurements(const std::vector<LidarMeasurement>& 
                 double dy = nearby_beacons[j].y - py;
                 double expected_range = sqrt(dx*dx + dy*dy);
                 double range_diff = fabs(meas_range - expected_range)/ LIDAR_RANGE_STD;
-                if (isInitialised()){
+                if (init_lidar){
                     // if filter is initialised, use both range and bearing for association
                     double expected_bearing = wrapAngle(atan2(dy, dx) - psi);
                     double bearing_diff = fabs(meas_bearing - expected_bearing)/ LIDAR_THETA_STD;
@@ -360,12 +361,14 @@ void KalmanFilter::handleLidarMeasurements(const std::vector<LidarMeasurement>& 
         for (int i = 0; i < num_measurements; ++i) {
             Eigen::Index minIndex;
             double minValue = association_matrix.row(i).minCoeff(&minIndex);
-            if (minValue < 3.0) { // threshold for association based on 3-sigma rule
-                dataset_copy[i].id = nearby_beacons[minIndex].id;    
-            }
+            dataset_copy[i].id = nearby_beacons[minIndex].id;    
+            // if (minValue < 3.0) { // threshold for association based on 3-sigma rule
+            //     dataset_copy[i].id = nearby_beacons[minIndex].id;    
+            // }
         }
         // find the bearing if not initialised
-        if (!isInitialised()){
+        // if (!isInitialised()){
+        if (!init_lidar){
             std::vector<double> psi_candidates;
             for (const auto& meas : dataset_copy) {
                 if (meas.id != -1){

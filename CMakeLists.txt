@@ -3,6 +3,10 @@ project(AKFSFSimulation)
 
 set(CMAKE_CXX_STANDARD 11)
 
+# Enable debug symbols for debugging
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+
 find_package (Eigen3 REQUIRED NO_MODULE)
 find_package (OpenCV REQUIRED)
 find_package (SDL2 REQUIRED)
@@ -28,6 +32,7 @@ add_executable(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE 
         ${SDL2_INCLUDE_DIRS}
         ${SDL2_TTF_INCLUDE_DIR}
+        ${EIGEN3_INCLUDE_DIR}
 )
 
 target_link_libraries(${PROJECT_NAME}

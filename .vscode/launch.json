@@ -1,0 +1,44 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug AKFSFSimulation",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/AKFSFSimulation",
+            "args": [],
+            "cwd": "${workspaceFolder}/build",
+            "preLaunchTask": "CMake: build",
+            "stopAtEntry": false,
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
+        },
+        {
+            "name": "Debug AKFSFSimulation (Headless)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/AKFSFSimulation",
+            "args": ["--headless"],
+            "cwd": "${workspaceFolder}/build",
+            "preLaunchTask": "CMake: build",
+            "stopAtEntry": false,
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
+        },
+        {
+            "name": "Debug with Record",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/AKFSFSimulation",
+            "args": ["--record"],
+            "cwd": "${workspaceFolder}/build",
+            "preLaunchTask": "CMake: build",
+            "stopAtEntry": false,
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
+        }
+    ]
+}
