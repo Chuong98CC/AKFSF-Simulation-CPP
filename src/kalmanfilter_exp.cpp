@@ -298,7 +298,7 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
         setState(state);
         setCovariance(cov);
         init_GPS = true;  // Mark GPS as initialized
-        // m_initialised = init_GPS && init_lidar;
+        m_initialised = init_GPS && init_lidar;
         // ----------------------------------------------------------------------- //
     }             
 }

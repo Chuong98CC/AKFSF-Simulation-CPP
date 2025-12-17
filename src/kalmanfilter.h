@@ -31,9 +31,9 @@ class KalmanFilterBase
         MatrixXd getCovariance()const {return m_covariance;}
         void setState(const VectorXd& state ) {m_state = state; m_initialised = true;}
         void setCovariance(const MatrixXd& cov ){m_covariance = cov;}
+        bool m_initialised;
 
     private:
-        bool m_initialised;
         VectorXd m_state;
         MatrixXd m_covariance;
 };
@@ -41,6 +41,8 @@ class KalmanFilterBase
 class KalmanFilter : public KalmanFilterBase
 {
     public:
+        KalmanFilter() : init_GPS(false), init_lidar(false) {}
+        
         VehicleState getVehicleState();
         Matrix2d getVehicleStatePositionCovariance();
 
@@ -51,8 +53,8 @@ class KalmanFilter : public KalmanFilterBase
         void handleGPSMeasurement(GPSMeasurement meas);
 
     private:
-        Matrix4d F;
-        Eigen::Matrix<double,4,2> L;
+        bool init_GPS;
+        bool init_lidar;
 };
 
 #endif  // INCLUDE_AKFSFSIM_KALMANFILTER_H
