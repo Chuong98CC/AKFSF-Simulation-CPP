@@ -74,6 +74,8 @@ class KalmanFilter : public KalmanFilterBase
         void handleLidarMeasurement(LidarMeasurement meas, const BeaconMap& map);
         void handleGPSMeasurement(GPSMeasurement meas);
 
+    private:
+        void init_heading_from_lidar(const std::vector<LidarMeasurement>& dataset, const BeaconMap& map);
 };
 
 #endif  // INCLUDE_AKFSFSIM_KALMANFILTER_H
