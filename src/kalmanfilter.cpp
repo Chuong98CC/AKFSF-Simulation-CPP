@@ -61,27 +61,32 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
         double psi = state(2);
         BeaconData map_beacon;
         // ----------------------------------------------------------------------- //
+        bool reject_outlier = false;
         // Capstone Addition: If no beacon match found, try nearest neighbour within reasonable range
         if (meas.id == -1){
             // No Beacon Match Found - Try Nearest Neighbour within Reasonable Range
+            reject_outlier = true;
             double lidar_r = meas.range;
             double lidar_bearing = meas.theta;
-            double expected_Lx = px + lidar_r*cos(wrapAngle(psi+lidar_bearing));
-            double expected_Ly = py + lidar_r*sin(wrapAngle(psi+lidar_bearing));
-            std::vector<BeaconData> nearby_beacons = map.getBeaconsWithinRange(expected_Lx, expected_Ly, 6*LIDAR_RANGE_STD); 
+            double sigma_x = cov(0,0);
+            double sigma_y = cov(1,1);
+            double margin = 6.0*(LIDAR_RANGE_STD+sqrt(sigma_x+sigma_y)); // 6-sigma margin
+            std::vector<BeaconData> nearby_beacons = map.getBeaconsWithinRange(px, py, lidar_r + margin); 
             int num_beacons = nearby_beacons.size();
             if (num_beacons>0)
             {
                 // Choose the closest beacon
                 map_beacon = nearby_beacons[0];  // Assign to outer variable, not create new one
-                double dx = expected_Lx - map_beacon.x;
-                double dy = expected_Ly - map_beacon.y;
-                double closest_dist = sqrt(dx*dx + dy*dy);
+                double dx = map_beacon.x - px;
+                double dy = map_beacon.y - py;
+                double d_angle = wrapAngle(atan2(dy, dx) - psi - lidar_bearing);
+                double closest_dist = sqrt(dx*dx + dy*dy) + d_angle*d_angle;
                 for (int i=1; i<num_beacons; ++i)
                 {
-                    dx = expected_Lx - nearby_beacons[i].x;
-                    dy = expected_Ly - nearby_beacons[i].y;
-                    double dist = sqrt(dx*dx + dy*dy);
+                    dx = nearby_beacons[i].x - px;
+                    dy = nearby_beacons[i].y - py;
+                    d_angle = wrapAngle(atan2(dy, dx) - psi - lidar_bearing);   
+                    double dist = sqrt(dx*dx + dy*dy) + d_angle*d_angle;
                     if (dist<closest_dist)
                     {
                         closest_dist = dist;
@@ -138,6 +143,17 @@ void KalmanFilter::handleLidarMeasurement(LidarMeasurement meas, const BeaconMap
         z << meas.range, meas.theta;
         Vector2d y = z - z_hat;
         y(1) = wrapAngle(y(1));  // Wrap angle innovation
+
+        if (reject_outlier)
+        {
+            // Simple Mahalanobis Distance Check for Outlier Rejection
+            double mahalanobis_dist = y.transpose()*S.inverse()*y;
+            if (mahalanobis_dist > 20) // Chi-square threshold for 2 DOF at 99% confidence
+            {
+                std::cout << "Lidar Measurement Rejected by Mahalanobis Distance Check: " << mahalanobis_dist << std::endl;
+                return;
+            }
+        }
         state = state + K * y;
         state = normaliseState(state);  // Normalize heading after update
         cov = (MatrixXd::Identity(num_state,num_state) - K * H) * cov;
@@ -225,7 +241,7 @@ void KalmanFilter::handleGPSMeasurement(GPSMeasurement meas)
 
          // GPS Innovation Check (NIS) Dealing with Fault Values
         VectorXd NIS = z_error.transpose()*S.inverse()*z_error;
-        if (NIS(0) < 100) // Put a threshold here
+        if (NIS(0) < 10) // Chi-Squared Threshold for 2 DOF at 99% Confidence
         { 
             state = state + K*z_error;
             cov = (MatrixXd::Identity(num_state,num_state) - K*H) * cov;
